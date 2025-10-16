@@ -10,38 +10,6 @@ const router = Router();
  * GET /api/events
  * Menampilkan daftar event (public)
  */
-router.get("/mine", requireAuth, requireRole("ORGANIZER"), async (req, res) => {
-  try {
-    let organizerId: string | undefined;
-
-    if (req.user!.role === "ORGANIZER") {
-      const organizer = await prisma.organizerProfile.findUnique({
-        where: { userId: req.user!.id },
-      });
-      if (!organizer) {
-        return res.status(404).json({ error: "Organizer profile not found" });
-      }
-      organizerId = organizer.id;
-    }
-
-    const events = await prisma.event.findMany({
-      where: organizerId ? { organizerId } : {},
-      include: {
-        organizer: { select: { displayName: true, ratingsAvg: true } },
-        ticketTypes: true,
-        promotions: true,
-        reviews: true,
-      },
-      orderBy: { createdAt: "desc" },
-    });
-
-    res.json({ data: events });
-  } catch (err) {
-    console.error("Error fetching organizer events:", err);
-    res.status(500).json({ error: "Failed to fetch organizer events" });
-  }
-});
-
 router.get("/", async (req, res) => {
   try {
     const {
@@ -296,6 +264,42 @@ router.put(
     }
   }
 );
+
+/**
+ * GET /api/events/mine
+ * Menampilkan daftar event organizer sekarang
+ */
+router.get("/mine", requireAuth, requireRole("ORGANIZER"), async (req, res) => {
+  try {
+    let organizerId: string | undefined;
+
+    if (req.user!.role === "ORGANIZER") {
+      const organizer = await prisma.organizerProfile.findUnique({
+        where: { userId: req.user!.id },
+      });
+      if (!organizer) {
+        return res.status(404).json({ error: "Organizer profile not found" });
+      }
+      organizerId = organizer.id;
+    }
+
+    const events = await prisma.event.findMany({
+      where: organizerId ? { organizerId } : {},
+      include: {
+        organizer: { select: { displayName: true, ratingsAvg: true } },
+        ticketTypes: true,
+        promotions: true,
+        reviews: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    res.json({ data: events });
+  } catch (err) {
+    console.error("Error fetching organizer events:", err);
+    res.status(500).json({ error: "Failed to fetch organizer events" });
+  }
+});
 
 /**
  * GET /api/events/organizers/:id

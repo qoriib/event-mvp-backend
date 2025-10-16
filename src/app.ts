@@ -45,7 +45,6 @@ app.use("/api/promotions", promoRoutes);
 app.use("/api/transactions", txRoutes);
 app.use("/api/reviews", reviewRoutes);
 
-// Global error handler (harus di bawah semua route)
 app.use(errorHandler);
 
 export default app;

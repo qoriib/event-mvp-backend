@@ -203,44 +203,43 @@ router.delete(
   }
 );
 
-router.get(
-  "/mine",
-  requireAuth,
-  requireRole("ORGANIZER"),
-  async (req, res) => {
-    try {
-      const organizer = await prisma.organizerProfile.findUnique({
-        where: { userId: req.user!.id },
-      });
-      if (!organizer) {
-        return res.status(404).json({ error: "Organizer profile not found" });
-      }
-
-      const promotions = await prisma.promotion.findMany({
-        where: {
-          event: {
-            organizerId: organizer.id,
-          },
-        },
-        orderBy: { startsAt: "desc" },
-        include: {
-          event: {
-            select: {
-              id: true,
-              title: true,
-              startAt: true,
-              endAt: true,
-            },
-          },
-        },
-      });
-
-      res.json({ data: promotions });
-    } catch (err) {
-      console.error("Error fetching organizer promotions:", err);
-      res.status(500).json({ error: "Failed to fetch organizer promotions" });
+/**
+ * POST /api/promotions/mine
+ * Menampilkan promosi (khusus ORGANIZER)
+ */
+router.get("/mine", requireAuth, requireRole("ORGANIZER"), async (req, res) => {
+  try {
+    const organizer = await prisma.organizerProfile.findUnique({
+      where: { userId: req.user!.id },
+    });
+    if (!organizer) {
+      return res.status(404).json({ error: "Organizer profile not found" });
     }
+
+    const promotions = await prisma.promotion.findMany({
+      where: {
+        event: {
+          organizerId: organizer.id,
+        },
+      },
+      orderBy: { startsAt: "desc" },
+      include: {
+        event: {
+          select: {
+            id: true,
+            title: true,
+            startAt: true,
+            endAt: true,
+          },
+        },
+      },
+    });
+
+    res.json({ data: promotions });
+  } catch (err) {
+    console.error("Error fetching organizer promotions:", err);
+    res.status(500).json({ error: "Failed to fetch organizer promotions" });
   }
-);
+});
 
 export default router;

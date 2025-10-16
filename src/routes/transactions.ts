@@ -323,6 +323,10 @@ router.put(
   }
 );
 
+/**
+ * GET /api/transactions/:id/status
+ * Menampilkan transaksi (Khusus Organizer)
+ */
 router.get(
   "/manage",
   requireAuth,
