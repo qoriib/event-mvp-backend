@@ -4,7 +4,7 @@ import { env } from "../env";
 
 export interface AuthUser {
   id: string;
-  role: "ADMIN" | "ORGANIZER" | "CUSTOMER";
+  role: "ORGANIZER" | "CUSTOMER";
 }
 
 declare global {

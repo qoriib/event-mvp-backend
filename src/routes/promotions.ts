@@ -62,10 +62,23 @@ router.post(
         maxUses,
       } = req.body;
 
+      const organizer = await prisma.organizerProfile.findUnique({
+        where: { userId: req.user!.id },
+      });
+      if (!organizer) {
+        return res.status(404).json({ error: "Organizer profile not found" });
+      }
+
       const event = await prisma.event.findUnique({
         where: { id: eventId },
       });
       if (!event) return res.status(404).json({ error: "Event not found" });
+
+      if (event.organizerId !== organizer.id) {
+        return res
+          .status(403)
+          .json({ error: "Cannot create promotion for this event" });
+      }
 
       const existing = await prisma.promotion.findFirst({
         where: { eventId, code },
@@ -112,9 +125,25 @@ router.put(
     try {
       const { id } = req.params;
 
+      const organizer = await prisma.organizerProfile.findUnique({
+        where: { userId: req.user!.id },
+      });
+      if (!organizer) {
+        return res.status(404).json({ error: "Organizer profile not found" });
+      }
+
       const existing = await prisma.promotion.findUnique({ where: { id } });
       if (!existing)
         return res.status(404).json({ error: "Promotion not found" });
+
+      const event = await prisma.event.findUnique({
+        where: { id: existing.eventId },
+      });
+      if (!event || event.organizerId !== organizer.id) {
+        return res
+          .status(403)
+          .json({ error: "Cannot update promotion for this event" });
+      }
 
       const updated = await prisma.promotion.update({
         where: { id },
@@ -144,9 +173,25 @@ router.delete(
     try {
       const { id } = req.params;
 
+      const organizer = await prisma.organizerProfile.findUnique({
+        where: { userId: req.user!.id },
+      });
+      if (!organizer) {
+        return res.status(404).json({ error: "Organizer profile not found" });
+      }
+
       const existing = await prisma.promotion.findUnique({ where: { id } });
       if (!existing)
         return res.status(404).json({ error: "Promotion not found" });
+
+      const event = await prisma.event.findUnique({
+        where: { id: existing.eventId },
+      });
+      if (!event || event.organizerId !== organizer.id) {
+        return res
+          .status(403)
+          .json({ error: "Cannot delete promotion for this event" });
+      }
 
       await prisma.promotion.delete({ where: { id } });
 
@@ -154,6 +199,46 @@ router.delete(
     } catch (err) {
       console.error("Error deleting promotion:", err);
       res.status(500).json({ error: "Failed to delete promotion" });
+    }
+  }
+);
+
+router.get(
+  "/mine",
+  requireAuth,
+  requireRole("ORGANIZER"),
+  async (req, res) => {
+    try {
+      const organizer = await prisma.organizerProfile.findUnique({
+        where: { userId: req.user!.id },
+      });
+      if (!organizer) {
+        return res.status(404).json({ error: "Organizer profile not found" });
+      }
+
+      const promotions = await prisma.promotion.findMany({
+        where: {
+          event: {
+            organizerId: organizer.id,
+          },
+        },
+        orderBy: { startsAt: "desc" },
+        include: {
+          event: {
+            select: {
+              id: true,
+              title: true,
+              startAt: true,
+              endAt: true,
+            },
+          },
+        },
+      });
+
+      res.json({ data: promotions });
+    } catch (err) {
+      console.error("Error fetching organizer promotions:", err);
+      res.status(500).json({ error: "Failed to fetch organizer promotions" });
     }
   }
 );

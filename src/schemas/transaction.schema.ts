@@ -12,7 +12,7 @@ export const createTransactionSchema = z.object({
 
 export const uploadProofSchema = z.object({
   body: z.object({
-    paymentProofUrl: z.string().url("Invalid payment proof URL"),
+    paymentProofUrl: z.string().min(3, "Payment proof is required"),
   }),
 });
 

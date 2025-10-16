@@ -7,6 +7,7 @@ import {
   uploadProofSchema,
   updateTransactionStatusSchema,
 } from "../schemas/transaction.schema";
+import { upload } from "../middlewares/upload";
 
 const router = Router();
 
@@ -144,38 +145,53 @@ router.post(
 
 /**
  * POST /api/transactions/:id/proof
- * Upload bukti pembayaran
+ * Upload bukti pembayaran (file upload)
  */
 router.post(
   "/:id/proof",
   requireAuth,
-  validateSchema(uploadProofSchema),
-  async (req, res) => {
+  upload.single("paymentProof"),
+  async (req: any, res) => {
     try {
       const { id } = req.params;
-      const { paymentProofUrl } = req.body;
+      const file = req.file;
+
+      if (!file) {
+        return res
+          .status(400)
+          .json({ error: "No payment proof file uploaded" });
+      }
+
+      // ✅ URL publik tanpa /api prefix
+      const paymentProofUrl = `/uploads/${file.filename}`;
 
       const tx = await prisma.transaction.findUnique({
         where: { id, userId: req.user!.id },
       });
       if (!tx) return res.status(404).json({ error: "Transaction not found" });
 
-      if (tx.status !== "WAITING_PAYMENT")
+      // Izinkan upload ulang jika masih menunggu konfirmasi
+      if (!["WAITING_PAYMENT", "WAITING_CONFIRMATION"].includes(tx.status)) {
         return res.status(400).json({ error: "Invalid transaction state" });
+      }
 
+      // Update transaksi
       const updated = await prisma.transaction.update({
         where: { id },
         data: {
           paymentProofUrl,
           paymentProofAt: new Date(),
           status: "WAITING_CONFIRMATION",
-          decisionDueAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000), // 3 hari
+          decisionDueAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
         },
       });
 
       res.json({
         message: "Payment proof uploaded successfully",
-        data: updated,
+        data: {
+          ...updated,
+          paymentProofUrl, // kirim path publik langsung
+        },
       });
     } catch (err) {
       console.error("Error uploading proof:", err);
@@ -191,7 +207,7 @@ router.post(
 router.put(
   "/:id/status",
   requireAuth,
-  requireRole("ORGANIZER", "ADMIN"),
+  requireRole("ORGANIZER"),
   validateSchema(updateTransactionStatusSchema),
   async (req, res) => {
     try {
@@ -200,9 +216,26 @@ router.put(
 
       const tx = await prisma.transaction.findUnique({
         where: { id },
-        include: { user: true },
+        include: {
+          user: true,
+          event: { select: { organizerId: true } },
+        },
       });
       if (!tx) return res.status(404).json({ error: "Transaction not found" });
+
+      if (req.user!.role === "ORGANIZER") {
+        const organizer = await prisma.organizerProfile.findUnique({
+          where: { userId: req.user!.id },
+        });
+        if (!organizer)
+          return res.status(404).json({ error: "Organizer profile not found" });
+
+        if (tx.event?.organizerId !== organizer.id) {
+          return res
+            .status(403)
+            .json({ error: "Unauthorized to update this transaction" });
+        }
+      }
 
       const updated = await prisma.transaction.update({
         where: { id },
@@ -224,6 +257,60 @@ router.put(
     } catch (err) {
       console.error("Error updating status:", err);
       res.status(500).json({ error: "Failed to update transaction status" });
+    }
+  }
+);
+
+router.get(
+  "/manage",
+  requireAuth,
+  requireRole("ORGANIZER"),
+  async (req, res) => {
+    try {
+      const { status } = req.query as { status?: string };
+
+      const where: any = {};
+      if (status) {
+        where.status = status;
+      }
+
+      if (req.user!.role === "ORGANIZER") {
+        const organizer = await prisma.organizerProfile.findUnique({
+          where: { userId: req.user!.id },
+        });
+        if (!organizer) {
+          return res.status(404).json({ error: "Organizer profile not found" });
+        }
+
+        where.event = { organizerId: organizer.id };
+      }
+
+      const transactions = await prisma.transaction.findMany({
+        where,
+        include: {
+          user: { select: { id: true, name: true, email: true } },
+          event: {
+            select: {
+              id: true,
+              title: true,
+              startAt: true,
+              endAt: true,
+              location: true,
+            },
+          },
+          items: {
+            include: {
+              ticketType: { select: { name: true, priceIDR: true } },
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      res.json({ data: transactions });
+    } catch (err) {
+      console.error("Error fetching managed transactions:", err);
+      res.status(500).json({ error: "Failed to fetch managed transactions" });
     }
   }
 );

@@ -9,7 +9,6 @@ datasource db {
 }
 
 enum Role {
-    ADMIN
     ORGANIZER
     CUSTOMER
 }
@@ -60,7 +59,6 @@ model Event {
     startAt        DateTime
     endAt          DateTime
     isPaid         Boolean          @default(false)
-    coverImageUrl  String?
     capacity       Int
     seatsAvailable Int
     ticketTypes    TicketType[]

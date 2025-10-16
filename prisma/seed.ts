@@ -9,17 +9,6 @@ async function main() {
   // === 1. USERS & ORGANIZERS ===
   const pwd = await bcrypt.hash("password", 10);
 
-  const admin = await prisma.user.upsert({
-    where: { email: "admin@eventify.com" },
-    update: {},
-    create: {
-      email: "admin@eventify.com",
-      name: "Admin User",
-      passwordHash: pwd,
-      role: "ADMIN",
-    },
-  });
-
   const organizerUser = await prisma.user.upsert({
     where: { email: "soundwave@eventify.com" },
     update: {},

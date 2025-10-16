@@ -7,6 +7,7 @@ import eventRoutes from "./routes/events";
 import promoRoutes from "./routes/promotions";
 import txRoutes from "./routes/transactions";
 import reviewRoutes from "./routes/reviews";
+import path from "path";
 
 const app = express();
 
@@ -35,6 +36,8 @@ app.use(
 );
 
 app.use(express.json({ limit: "5mb" }));
+
+app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 
 app.use("/api/auth", authRoutes);
 app.use("/api/events", eventRoutes);
