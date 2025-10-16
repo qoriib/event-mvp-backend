@@ -1,0 +1,262 @@
+import { Router } from "express";
+import { prisma } from "../libs/prisma";
+import { requireAuth, requireRole } from "../middlewares/auth";
+import { validateSchema } from "../middlewares/validate";
+import { createEventSchema, updateEventSchema } from "../schemas/event.schema";
+
+const router = Router();
+
+/**
+ * GET /api/events
+ * Menampilkan daftar event (public)
+ */
+router.get("/", async (req, res) => {
+  try {
+    const {
+      search,
+      category,
+      location,
+      from,
+      to,
+      page = "1",
+      limit = "12",
+    } = req.query as Record<string, string>;
+
+    const pageNum = parseInt(page) || 1;
+    const pageSize = parseInt(limit) || 12;
+    const skip = (pageNum - 1) * pageSize;
+
+    const where: any = {};
+
+    if (search) {
+      where.OR = [
+        { title: { contains: search, mode: "insensitive" } },
+        { description: { contains: search, mode: "insensitive" } },
+        { location: { contains: search, mode: "insensitive" } },
+      ];
+    }
+
+    if (category) where.category = category;
+    if (location) where.location = { contains: location, mode: "insensitive" };
+
+    if (from || to) {
+      where.startAt = {
+        gte: from ? new Date(from) : undefined,
+        lte: to ? new Date(to) : undefined,
+      };
+    }
+
+    const [events, total] = await Promise.all([
+      prisma.event.findMany({
+        where,
+        include: {
+          organizer: { select: { displayName: true, ratingsAvg: true } },
+          ticketTypes: true,
+          promotions: { where: { endsAt: { gt: new Date() } } },
+          reviews: true,
+        },
+        orderBy: { startAt: "asc" },
+        skip,
+        take: pageSize,
+      }),
+      prisma.event.count({ where }),
+    ]);
+
+    res.json({
+      data: events,
+      pagination: {
+        total,
+        page: pageNum,
+        limit: pageSize,
+        totalPages: Math.ceil(total / pageSize),
+      },
+    });
+  } catch (err) {
+    console.error("Error fetching events:", err);
+    res.status(500).json({ error: "Failed to fetch events" });
+  }
+});
+
+/**
+ * GET /api/events/:id
+ * Mendapatkan detail event
+ */
+router.get("/:id", async (req, res) => {
+  try {
+    const event = await prisma.event.findUnique({
+      where: { id: req.params.id },
+      include: {
+        organizer: { include: { user: { select: { email: true } } } },
+        ticketTypes: true,
+        promotions: true,
+        reviews: {
+          include: { user: { select: { name: true } } },
+          orderBy: { createdAt: "desc" },
+        },
+      },
+    });
+
+    if (!event) {
+      return res.status(404).json({ error: "Event not found" });
+    }
+
+    res.json(event);
+  } catch (err) {
+    console.error("Error fetching event details:", err);
+    res.status(500).json({ error: "Failed to fetch event details" });
+  }
+});
+
+/**
+ * POST /api/events
+ * Membuat event baru
+ */
+router.post(
+  "/",
+  requireAuth,
+  requireRole("ORGANIZER", "ADMIN"),
+  validateSchema(createEventSchema),
+  async (req, res) => {
+    try {
+      const {
+        title,
+        description,
+        category,
+        location,
+        startAt,
+        endAt,
+        isPaid,
+        capacity,
+        ticketTypes,
+      } = req.body;
+
+      const organizer = await prisma.organizerProfile.findUnique({
+        where: { userId: req.user!.id },
+      });
+
+      if (!organizer) {
+        return res.status(403).json({ error: "Organizer profile not found" });
+      }
+
+      const event = await prisma.event.create({
+        data: {
+          organizerId: organizer.id,
+          title,
+          description,
+          category,
+          location,
+          startAt: new Date(startAt),
+          endAt: new Date(endAt),
+          isPaid,
+          capacity,
+          seatsAvailable: capacity,
+          ticketTypes: {
+            create:
+              ticketTypes?.map((t: any) => ({
+                name: t.name,
+                priceIDR: t.priceIDR,
+                quota: t.quota ?? null,
+              })) ?? [],
+          },
+        },
+        include: { ticketTypes: true },
+      });
+
+      res.status(201).json(event);
+    } catch (err) {
+      console.error("Error creating event:", err);
+      res.status(500).json({ error: "Failed to create event" });
+    }
+  }
+);
+
+/**
+ * PUT /api/events/:id
+ * Memperbarui event
+ */
+router.put(
+  "/:id",
+  requireAuth,
+  requireRole("ORGANIZER", "ADMIN"),
+  validateSchema(updateEventSchema),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const {
+        title,
+        description,
+        category,
+        location,
+        startAt,
+        endAt,
+        isPaid,
+        capacity,
+      } = req.body;
+
+      const organizer = await prisma.organizerProfile.findUnique({
+        where: { userId: req.user!.id },
+      });
+
+      const event = await prisma.event.findUnique({ where: { id } });
+      if (!event) return res.status(404).json({ error: "Event not found" });
+
+      if (organizer && event.organizerId !== organizer.id) {
+        return res.status(403).json({ error: "Unauthorized" });
+      }
+
+      const updated = await prisma.event.update({
+        where: { id },
+        data: {
+          title,
+          description,
+          category,
+          location,
+          startAt: startAt ? new Date(startAt) : undefined,
+          endAt: endAt ? new Date(endAt) : undefined,
+          isPaid,
+          capacity,
+          seatsAvailable: capacity ?? event.seatsAvailable,
+        },
+      });
+
+      res.json(updated);
+    } catch (err) {
+      console.error("Error updating event:", err);
+      res.status(500).json({ error: "Failed to update event" });
+    }
+  }
+);
+
+/**
+ * DELETE /api/events/:id
+ * Menghapus event
+ */
+router.delete(
+  "/:id",
+  requireAuth,
+  requireRole("ORGANIZER", "ADMIN"),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const organizer = await prisma.organizerProfile.findUnique({
+        where: { userId: req.user!.id },
+      });
+
+      const event = await prisma.event.findUnique({ where: { id } });
+      if (!event) return res.status(404).json({ error: "Event not found" });
+
+      if (organizer && event.organizerId !== organizer.id) {
+        return res.status(403).json({ error: "Unauthorized" });
+      }
+
+      await prisma.event.delete({ where: { id } });
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Error deleting event:", err);
+      res.status(500).json({ error: "Failed to delete event" });
+    }
+  }
+);
+
+export default router;
