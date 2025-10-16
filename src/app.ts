@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
 import { errorHandler } from "./middlewares/error";
 import authRoutes from "./routes/auth";
 import eventRoutes from "./routes/events";
@@ -9,7 +10,30 @@ import reviewRoutes from "./routes/reviews";
 
 const app = express();
 
-app.use(cors());
+const allowedOrigins = ["http://localhost:3000"];
+
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+  })
+);
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
+
 app.use(express.json({ limit: "5mb" }));
 
 app.use("/api/auth", authRoutes);
