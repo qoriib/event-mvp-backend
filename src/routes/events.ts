@@ -204,7 +204,7 @@ router.post(
 
 /**
  * PUT /api/events/:id
- * Memperbarui event
+ * Memperbarui event dan menampilkan ticketTypes
  */
 router.put(
   "/:id",
@@ -223,35 +223,73 @@ router.put(
         endAt,
         isPaid,
         capacity,
+        ticketTypes,
       } = req.body;
 
+      // === Pastikan organizer valid ===
       const organizer = await prisma.organizerProfile.findUnique({
         where: { userId: req.user!.id },
       });
 
-      const event = await prisma.event.findUnique({ where: { id } });
+      const event = await prisma.event.findUnique({
+        where: { id },
+        include: { ticketTypes: true },
+      });
       if (!event) return res.status(404).json({ error: "Event not found" });
 
       if (organizer && event.organizerId !== organizer.id) {
         return res.status(403).json({ error: "Unauthorized" });
       }
 
-      const updated = await prisma.event.update({
+      // === Update event utama ===
+      const updatedEvent = await prisma.event.update({
         where: { id },
         data: {
           title,
           description,
           category,
           location,
-          startAt: startAt ? new Date(startAt) : undefined,
-          endAt: endAt ? new Date(endAt) : undefined,
+          startAt: startAt ? new Date(startAt) : event.startAt,
+          endAt: endAt ? new Date(endAt) : event.endAt,
           isPaid,
           capacity,
-          seatsAvailable: capacity ?? event.seatsAvailable,
+          seatsAvailable:
+            capacity && capacity !== event.capacity
+              ? capacity
+              : event.seatsAvailable,
+        },
+        include: {
+          ticketTypes: {
+            select: { id: true, name: true, priceIDR: true, quota: true },
+          },
         },
       });
 
-      res.json(updated);
+      // === Update daftar ticketTypes (opsional) ===
+      if (Array.isArray(ticketTypes)) {
+        // Hapus semua ticket lama, buat ulang (sederhana)
+        await prisma.ticketType.deleteMany({ where: { eventId: id } });
+        await prisma.ticketType.createMany({
+          data: ticketTypes.map((t: any) => ({
+            eventId: id,
+            name: t.name,
+            priceIDR: Number(t.priceIDR) || 0,
+            quota: t.quota ?? null,
+          })),
+        });
+      }
+
+      // === Ambil kembali event lengkap setelah perubahan ===
+      const refreshed = await prisma.event.findUnique({
+        where: { id },
+        include: {
+          ticketTypes: {
+            select: { id: true, name: true, priceIDR: true, quota: true },
+          },
+        },
+      });
+
+      res.json(refreshed);
     } catch (err) {
       console.error("Error updating event:", err);
       res.status(500).json({ error: "Failed to update event" });

@@ -28,7 +28,7 @@ model User {
     passwordHash  String
     name          String
     role          Role              @default(CUSTOMER)
-    pointsBalance Int               @default(0) // IDR
+    pointsBalance Int               @default(0)
     organizer     OrganizerProfile?
     reviews       Review[]
     transactions  Transaction[]
@@ -39,7 +39,7 @@ model User {
 model OrganizerProfile {
     id           String  @id @default(cuid())
     userId       String  @unique
-    user         User    @relation(fields: [userId], references: [id])
+    user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
     displayName  String
     bio          String?
     events       Event[]
@@ -48,25 +48,28 @@ model OrganizerProfile {
 }
 
 model Event {
-    id             String           @id @default(cuid())
-    organizerId    String
-    organizer      OrganizerProfile @relation(fields: [organizerId], references: [id])
+    id          String           @id @default(cuid())
+    organizerId String
+    organizer   OrganizerProfile @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+
     title          String
     description    String?
     category       String?
     location       String
     startAt        DateTime
     endAt          DateTime
-    isPaid         Boolean          @default(false)
+    isPaid         Boolean  @default(false)
     capacity       Int
     seatsAvailable Int
-    ticketTypes    TicketType[]
-    promotions     Promotion[]
-    tickets        Ticket[]
-    reviews        Review[]
-    createdAt      DateTime         @default(now())
-    updatedAt      DateTime         @updatedAt
-    Transaction    Transaction[]
+
+    ticketTypes TicketType[]
+    promotions  Promotion[]
+    tickets     Ticket[]
+    reviews     Review[]
+    Transaction Transaction[]
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
 
     @@index([startAt])
     @@index([category])
@@ -76,9 +79,9 @@ model Event {
 model TicketType {
     id              String            @id @default(cuid())
     eventId         String
-    event           Event             @relation(fields: [eventId], references: [id])
+    event           Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
     name            String
-    priceIDR        Int // 0 for free
+    priceIDR        Int
     quota           Int?
     createdAt       DateTime          @default(now())
     TransactionItem TransactionItem[]
@@ -88,7 +91,7 @@ model TicketType {
 model Promotion {
     id          String   @id @default(cuid())
     eventId     String
-    event       Event    @relation(fields: [eventId], references: [id])
+    event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
     code        String
     type        String // "PERCENT" | "FLAT"
     value       Int
@@ -104,9 +107,9 @@ model Promotion {
 model Transaction {
     id               String            @id @default(cuid())
     userId           String
-    user             User              @relation(fields: [userId], references: [id])
+    user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
     eventId          String
-    event            Event             @relation(fields: [eventId], references: [id])
+    event            Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
     status           TxStatus          @default(WAITING_PAYMENT)
     totalBeforeIDR   Int
     pointsUsedIDR    Int               @default(0)
@@ -130,9 +133,9 @@ model Transaction {
 model TransactionItem {
     id            String      @id @default(cuid())
     transactionId String
-    transaction   Transaction @relation(fields: [transactionId], references: [id])
+    transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
     ticketTypeId  String?
-    ticketType    TicketType? @relation(fields: [ticketTypeId], references: [id])
+    ticketType    TicketType? @relation(fields: [ticketTypeId], references: [id], onDelete: Cascade)
     qty           Int
     unitPriceIDR  Int
     lineTotalIDR  Int
@@ -141,11 +144,11 @@ model TransactionItem {
 model Ticket {
     id            String      @id @default(cuid())
     eventId       String
-    event         Event       @relation(fields: [eventId], references: [id])
+    event         Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
     transactionId String
-    transaction   Transaction @relation(fields: [transactionId], references: [id])
+    transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
     ticketTypeId  String?
-    ticketType    TicketType? @relation(fields: [ticketTypeId], references: [id])
+    ticketType    TicketType? @relation(fields: [ticketTypeId], references: [id], onDelete: Cascade)
     ownerUserId   String?
     checkedInAt   DateTime?
     createdAt     DateTime    @default(now())
@@ -154,9 +157,9 @@ model Ticket {
 model Review {
     id        String   @id @default(cuid())
     eventId   String
-    event     Event    @relation(fields: [eventId], references: [id])
+    event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
     userId    String
-    user      User     @relation(fields: [userId], references: [id])
+    user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
     rating    Int
     comment   String?
     createdAt DateTime @default(now())

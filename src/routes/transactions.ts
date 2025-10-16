@@ -4,9 +4,9 @@ import { requireAuth, requireRole } from "../middlewares/auth";
 import { validateSchema } from "../middlewares/validate";
 import {
   createTransactionSchema,
-  uploadProofSchema,
   updateTransactionStatusSchema,
 } from "../schemas/transaction.schema";
+import { TxStatus } from "@prisma/client";
 import { upload } from "../middlewares/upload";
 
 const router = Router();
@@ -103,18 +103,29 @@ router.post(
 
       const totalPayable = subtotal - promoDiscount - pointsUsed;
 
-      // === Create transaction + item ===
+      // === Tentukan status awal ===
+      const initialStatus =
+        totalPayable <= 0 ? "WAITING_CONFIRMATION" : "WAITING_PAYMENT";
+
+      // === Buat transaksi ===
       const transaction = await prisma.transaction.create({
         data: {
           userId: user.id,
           eventId,
-          status: "WAITING_PAYMENT",
+          status: initialStatus,
           totalBeforeIDR: subtotal,
           pointsUsedIDR: pointsUsed,
           promoCode: promoCode ?? null,
           promoDiscountIDR: promoDiscount,
           totalPayableIDR: totalPayable,
-          expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000), // 2 jam
+          expiresAt:
+            initialStatus === "WAITING_PAYMENT"
+              ? new Date(Date.now() + 2 * 60 * 60 * 1000) // 2 jam
+              : new Date(Date.now()), // langsung aktif untuk gratis
+          decisionDueAt:
+            initialStatus === "WAITING_CONFIRMATION"
+              ? new Date(Date.now() + 3 * 24 * 60 * 60 * 1000) // 3 hari
+              : null,
           items: {
             create: [
               {
@@ -127,13 +138,34 @@ router.post(
           },
         },
         include: {
-          event: { select: { title: true, location: true } },
-          items: { include: { ticketType: { select: { name: true } } } },
+          event: {
+            select: {
+              id: true,
+              title: true,
+              location: true,
+              ticketTypes: {
+                select: {
+                  id: true,
+                  name: true,
+                  priceIDR: true,
+                  quota: true,
+                },
+              },
+            },
+          },
+          items: {
+            include: {
+              ticketType: { select: { id: true, name: true, priceIDR: true } },
+            },
+          },
         },
       });
 
       res.status(201).json({
-        message: "Transaction created successfully",
+        message:
+          totalPayable <= 0
+            ? "Free ticket claimed successfully — no payment required"
+            : "Transaction created successfully",
         data: transaction,
       });
     } catch (err) {
@@ -154,48 +186,78 @@ router.post(
   async (req: any, res) => {
     try {
       const { id } = req.params;
-      const file = req.file;
 
-      if (!file) {
+      // === Validasi file ===
+      if (!req.file) {
         return res
           .status(400)
-          .json({ error: "No payment proof file uploaded" });
+          .json({ error: "File bukti pembayaran wajib diunggah." });
       }
 
-      // ✅ URL publik tanpa /api prefix
-      const paymentProofUrl = `/uploads/${file.filename}`;
-
-      const tx = await prisma.transaction.findUnique({
-        where: { id, userId: req.user!.id },
+      // === Ambil transaksi ===
+      const transaction = await prisma.transaction.findUnique({
+        where: { id },
+        include: { user: true, event: true },
       });
-      if (!tx) return res.status(404).json({ error: "Transaction not found" });
+      if (!transaction)
+        return res.status(404).json({ error: "Transaksi tidak ditemukan." });
 
-      // Izinkan upload ulang jika masih menunggu konfirmasi
-      if (!["WAITING_PAYMENT", "WAITING_CONFIRMATION"].includes(tx.status)) {
-        return res.status(400).json({ error: "Invalid transaction state" });
+      // === Pastikan transaksi milik user yang sedang login ===
+      if (transaction.userId !== req.user!.id) {
+        return res
+          .status(403)
+          .json({ error: "Tidak diizinkan mengunggah bukti pembayaran ini." });
       }
 
-      // Update transaksi
+      // === Pastikan status masih menunggu pembayaran ===
+      if (transaction.status !== TxStatus.WAITING_PAYMENT) {
+        return res.status(400).json({
+          error: `Tidak dapat upload bukti untuk transaksi dengan status ${transaction.status}.`,
+        });
+      }
+
+      // === Simpan file bukti ke DB ===
+      const proofUrl = `/uploads/${req.file.filename}`;
       const updated = await prisma.transaction.update({
         where: { id },
         data: {
-          paymentProofUrl,
+          paymentProofUrl: proofUrl,
           paymentProofAt: new Date(),
-          status: "WAITING_CONFIRMATION",
-          decisionDueAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+          status: TxStatus.WAITING_CONFIRMATION,
+        },
+        include: {
+          user: { select: { id: true, name: true, email: true } },
+          event: {
+            select: {
+              id: true,
+              title: true,
+              location: true,
+              startAt: true,
+              endAt: true,
+              ticketTypes: {
+                select: { id: true, name: true, priceIDR: true },
+              },
+            },
+          },
+          items: {
+            include: {
+              ticketType: {
+                select: { id: true, name: true, priceIDR: true },
+              },
+            },
+          },
         },
       });
 
-      res.json({
-        message: "Payment proof uploaded successfully",
-        data: {
-          ...updated,
-          paymentProofUrl, // kirim path publik langsung
-        },
+      return res.json({
+        message: "Bukti pembayaran berhasil diunggah.",
+        data: updated,
       });
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error uploading proof:", err);
-      res.status(500).json({ error: "Failed to upload payment proof" });
+      return res.status(500).json({
+        error: "Terjadi kesalahan saat mengunggah bukti pembayaran.",
+      });
     }
   }
 );
