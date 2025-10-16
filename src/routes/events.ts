@@ -298,38 +298,6 @@ router.put(
 );
 
 /**
- * DELETE /api/events/:id
- * Menghapus event
- */
-router.delete(
-  "/:id",
-  requireAuth,
-  requireRole("ORGANIZER"),
-  async (req, res) => {
-    try {
-      const { id } = req.params;
-
-      const organizer = await prisma.organizerProfile.findUnique({
-        where: { userId: req.user!.id },
-      });
-
-      const event = await prisma.event.findUnique({ where: { id } });
-      if (!event) return res.status(404).json({ error: "Event not found" });
-
-      if (organizer && event.organizerId !== organizer.id) {
-        return res.status(403).json({ error: "Unauthorized" });
-      }
-
-      await prisma.event.delete({ where: { id } });
-      res.json({ success: true });
-    } catch (err) {
-      console.error("Error deleting event:", err);
-      res.status(500).json({ error: "Failed to delete event" });
-    }
-  }
-);
-
-/**
  * GET /api/events/organizers/:id
  * Mendapatkan detail lengkap organizer beserta event dan review
  */
