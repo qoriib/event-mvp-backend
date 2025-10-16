@@ -24,8 +24,6 @@ router.get("/mine", requireAuth, requireRole("ORGANIZER"), async (req, res) => {
       organizerId = organizer.id;
     }
 
-    console.log(organizerId);
-
     const events = await prisma.event.findMany({
       where: organizerId ? { organizerId } : {},
       include: {
