@@ -10,44 +10,37 @@ const router = Router();
  * GET /api/events
  * Menampilkan daftar event (public)
  */
-router.get(
-  "/mine",
-  requireAuth,
-  requireRole("ORGANIZER"),
-  async (req, res) => {
-    try {
-      let organizerId: string | undefined;
+router.get("/mine", requireAuth, requireRole("ORGANIZER"), async (req, res) => {
+  try {
+    let organizerId: string | undefined;
 
-      if (req.user!.role === "ORGANIZER") {
-        const organizer = await prisma.organizerProfile.findUnique({
-          where: { userId: req.user!.id },
-        });
-        if (!organizer) {
-          return res
-            .status(404)
-            .json({ error: "Organizer profile not found" });
-        }
-        organizerId = organizer.id;
-      }
-
-      const events = await prisma.event.findMany({
-        where: organizerId ? { organizerId } : {},
-        include: {
-          organizer: { select: { displayName: true, ratingsAvg: true } },
-          ticketTypes: true,
-          promotions: true,
-          reviews: true,
-        },
-        orderBy: { createdAt: "desc" },
+    if (req.user!.role === "ORGANIZER") {
+      const organizer = await prisma.organizerProfile.findUnique({
+        where: { userId: req.user!.id },
       });
-
-      res.json({ data: events });
-    } catch (err) {
-      console.error("Error fetching organizer events:", err);
-      res.status(500).json({ error: "Failed to fetch organizer events" });
+      if (!organizer) {
+        return res.status(404).json({ error: "Organizer profile not found" });
+      }
+      organizerId = organizer.id;
     }
+
+    const events = await prisma.event.findMany({
+      where: organizerId ? { organizerId } : {},
+      include: {
+        organizer: { select: { displayName: true, ratingsAvg: true } },
+        ticketTypes: true,
+        promotions: true,
+        reviews: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    res.json({ data: events });
+  } catch (err) {
+    console.error("Error fetching organizer events:", err);
+    res.status(500).json({ error: "Failed to fetch organizer events" });
   }
-);
+});
 
 router.get("/", async (req, res) => {
   try {
@@ -297,5 +290,97 @@ router.delete(
     }
   }
 );
+
+/**
+ * GET /api/events/organizers/:id
+ * Mendapatkan detail lengkap organizer beserta event dan review
+ */
+router.get("/organizers/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Ambil data organizer + relasi
+    const organizer = await prisma.organizerProfile.findUnique({
+      where: { id },
+      include: {
+        user: {
+          select: {
+            email: true,
+            name: true,
+          },
+        },
+        events: {
+          include: {
+            ticketTypes: true,
+            promotions: true,
+            reviews: {
+              include: {
+                user: { select: { name: true } },
+              },
+            },
+          },
+          orderBy: { startAt: "asc" },
+        },
+      },
+    });
+
+    if (!organizer) {
+      return res.status(404).json({ error: "Organizer not found" });
+    }
+
+    // Ambil semua review yang ditulis untuk event milik organizer ini
+    const organizerReviews = await prisma.review.findMany({
+      where: {
+        event: { organizerId: id },
+      },
+      include: {
+        user: { select: { name: true } },
+        event: { select: { title: true, startAt: true, location: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return res.json({
+      id: organizer.id,
+      displayName: organizer.displayName,
+      bio: organizer.bio,
+      ratingsAvg: organizer.ratingsAvg,
+      ratingsCount: organizer.ratingsCount,
+      user: organizer.user,
+      events: organizer.events.map((e) => ({
+        id: e.id,
+        title: e.title,
+        description: e.description,
+        category: e.category,
+        location: e.location,
+        startAt: e.startAt,
+        endAt: e.endAt,
+        isPaid: e.isPaid,
+        capacity: e.capacity,
+        seatsAvailable: e.seatsAvailable,
+        ticketTypes: e.ticketTypes,
+        promotions: e.promotions,
+        reviews: e.reviews.map((r) => ({
+          id: r.id,
+          rating: r.rating,
+          comment: r.comment,
+          createdAt: r.createdAt,
+          user: r.user,
+        })),
+      })),
+      reviews: organizerReviews.map((r) => ({
+        id: r.id,
+        rating: r.rating,
+        comment: r.comment,
+        createdAt: r.createdAt,
+        user: r.user,
+        event: r.event,
+      })),
+    });
+  } catch (err) {
+    console.error("Error fetching organizer detail:", err);
+    res.status(500).json({ error: "Failed to fetch organizer detail" });
+  }
+});
 
 export default router;

@@ -34,7 +34,6 @@ model User {
     transactions  Transaction[]
     createdAt     DateTime          @default(now())
     updatedAt     DateTime          @updatedAt
-    PointLedger   PointLedger[]
 }
 
 model OrganizerProfile {
@@ -163,16 +162,4 @@ model Review {
     createdAt DateTime @default(now())
 
     @@unique([eventId, userId])
-}
-
-model PointLedger {
-    id        String   @id @default(cuid())
-    userId    String
-    user      User     @relation(fields: [userId], references: [id])
-    deltaIDR  Int
-    reason    String
-    refTxId   String?
-    createdAt DateTime @default(now())
-
-    @@index([userId, createdAt])
 }

@@ -90,23 +90,23 @@ router.post("/login", validateSchema(loginSchema), async (req, res) => {
  */
 router.get("/me", requireAuth, async (req, res) => {
   try {
-      const user = await prisma.user.findUnique({
-        where: { id: req.user!.id },
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          role: true,
-          pointsBalance: true,
-          organizer: {
-            select: {
-              displayName: true,
-              bio: true,
-              ratingsAvg: true,
-            },
+    const user = await prisma.user.findUnique({
+      where: { id: req.user!.id },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        pointsBalance: true,
+        organizer: {
+          select: {
+            displayName: true,
+            bio: true,
+            ratingsAvg: true,
           },
         },
-      });
+      },
+    });
 
     if (!user) return res.status(404).json({ error: "User not found" });
 
